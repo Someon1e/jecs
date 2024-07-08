@@ -1,3 +1,5 @@
+
+
 --!optimize 2
 --!native
 --!strict
@@ -685,6 +687,91 @@ local function replaceMult(row, columns, ...)
 	end
 end
 
+
+local function nextItem(self)
+    return self.queryNext()
+end
+
+local function iter(self)
+    return self.queryNext
+end
+
+local function without(self, ...)
+    local compatibleArchetypes = self.compatibleArchetypes
+
+	local withoutComponents = { ... }
+	for i = #compatibleArchetypes, 1, -1 do
+		local archetype = compatibleArchetypes[i]
+		local records = archetype.records
+		local shouldRemove = false
+
+		for _, componentId in withoutComponents do
+			if records[componentId] then
+				shouldRemove = true
+				break
+			end
+		end
+
+		if shouldRemove then
+			table.remove(compatibleArchetypes, i)
+		end
+	end
+
+	return self
+end
+
+local function replace(self, fn)
+    local compatibleArchetypes = self.compatibleArchetypes
+    local indices = self.indices
+    local queryLength = self.queryLength
+    local queryOutput = self.queryOutput
+
+    for i, archetype in compatibleArchetypes do
+		local tr = indices[i]
+		local columns = archetype.columns
+
+		for row in archetype.entities do
+			if queryLength == 1 then
+				local a = columns[tr[1]]
+				local pa = fn(a[row])
+
+				a[row] = pa
+			elseif queryLength == 2 then
+				local a = columns[tr[1]]
+				local b = columns[tr[2]]
+
+				a[row], b[row] = fn(a[row], b[row])
+			elseif queryLength == 3 then
+				local a = columns[tr[1]]
+				local b = columns[tr[2]]
+				local c = columns[tr[3]]
+
+				a[row], b[row], c[row] = fn(a[row], b[row], c[row])
+			elseif queryLength == 4 then
+				local a = columns[tr[1]]
+				local b = columns[tr[2]]
+				local c = columns[tr[3]]
+				local d = columns[tr[4]]
+
+				a[row], b[row], c[row], d[row] = fn(
+					a[row], b[row], c[row], d[row])
+			else
+				for i = 1, queryLength do
+					queryOutput[i] = columns[tr[i]][row]
+				end
+				replaceMult(row, columns, fn(unpack(queryOutput)))
+			end
+		end
+	end
+end
+
+local PreparedQuery = {}
+PreparedQuery.__index = PreparedQuery
+PreparedQuery.__iter = iter
+PreparedQuery.next = nextItem
+PreparedQuery.without = without
+PreparedQuery.replace = replace
+
 local function preparedQuery(compatibleArchetypes: { Archetype },
 	components: { i53? }, indices: { { number } })
 
@@ -774,85 +861,14 @@ local function preparedQuery(compatibleArchetypes: { Archetype },
 		return entityId, unpack(queryOutput, 1, queryLength)
 	end
 
-	local function without(self, ...): Query
-		local withoutComponents = { ... }
-		for i = #compatibleArchetypes, 1, -1 do
-			local archetype = compatibleArchetypes[i]
-			local records = archetype.records
-			local shouldRemove = false
-
-			for _, componentId in withoutComponents do
-				if records[componentId] then
-					shouldRemove = true
-					break
-				end
-			end
-
-			if shouldRemove then
-				table.remove(compatibleArchetypes, i)
-			end
-		end
-
-		return self
-	end
-
-	local function iter()
-        lastArchetype = 1
-		archetype = compatibleArchetypes[1]
-		entities = archetype.entities
-		i = #entities
-
-		return queryNext
-	end
-
-	local function replace(_, fn)
-        for i, archetype in compatibleArchetypes do
-			local tr = indices[i]
-			local columns = archetype.columns
-
-			for row in archetype.entities do
-				if queryLength == 1 then
-					local a = columns[tr[1]]
-					local pa = fn(a[row])
-
-					a[row] = pa
-				elseif queryLength == 2 then
-					local a = columns[tr[1]]
-					local b = columns[tr[2]]
-
-					a[row], b[row] = fn(a[row], b[row])
-				elseif queryLength == 3 then
-					local a = columns[tr[1]]
-					local b = columns[tr[2]]
-					local c = columns[tr[3]]
-
-					a[row], b[row], c[row] = fn(a[row], b[row], c[row])
-				elseif queryLength == 4 then
-					local a = columns[tr[1]]
-					local b = columns[tr[2]]
-					local c = columns[tr[3]]
-					local d = columns[tr[4]]
-
-					a[row], b[row], c[row], d[row] = fn(
-						a[row], b[row], c[row], d[row])
-				else
-					for i = 1, queryLength do
-						queryOutput[i] = columns[tr[i]][row]
-					end
-					replaceMult(row, columns, fn(unpack(queryOutput)))
-				end
-			end
-		end
-	end
-
-	local it = {
-		__iter = iter,
-		next = queryNext,
-		without = without,
-		replace = replace
-	}
-
-	return setmetatable(it, it) :: any
+	return setmetatable({
+        compatibleArchetypes = compatibleArchetypes,
+        components = components,
+        indices = indices,
+        queryNext = queryNext,
+        queryOutput = queryOutput,
+        queryLength = queryLength
+    }, PreparedQuery) :: any
 end
 
 local function query(world: World, ...: number): Query
