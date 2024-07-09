@@ -11,7 +11,7 @@ local function flip()
 	return math.random() >= 0.5
 end
 
-for i = 1, 2 ^ 20 - 2 do
+for i = 1, 2 ^ 16 - 2 do
 	local entity = world:entity()
 
 	if flip() then
@@ -28,9 +28,16 @@ for i = 1, 2 ^ 20 - 2 do
 	end
 end
 
+local m = collectgarbage("count")
 local s = gcinfo()
-for i = 1, 100 do
+local t = os.clock()
+for i = 1, 100_000 do
     local q = world:query(A)
+    q = world:query(B)
 end
-
-print(gcinfo() - s)
+print("time took for queries: ", os.clock() - t)
+print("allocated memory: ", collectgarbage("count") - m)
+t = os.clock()
+collectgarbage("collect")
+print("gc cycle time:", os.clock() - t)
+print("persistent memory left:", gcinfo() - s)

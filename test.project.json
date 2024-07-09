@@ -1,29 +1,28 @@
 {
-    "name": "jecs-test",
-    "tree": {
-      "$className": "DataModel",
-      "StarterPlayer": {
-        "$className": "StarterPlayer",
-        "StarterPlayerScripts": {
-          "$className": "StarterPlayerScripts",
-          "$path": "tests"
-        }
+  "name": "jecs-test",
+  "tree": {
+    "$className": "DataModel",
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "$path": "tests"
+      }
+    },
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Lib": {
+        "$path": "src"
       },
-      "ReplicatedStorage": {
-        "$className": "ReplicatedStorage",
-        "Lib": {
-          "$path": "lib"
-        },
-        "rgb": {
-          "$path": "rgb.lua"
-        },
-        "benches": {
-          "$path": "benches"
-        },
-        "mirror": {
-          "$path": "mirror"
-        }
+      "rgb": {
+        "$path": "rgb.luau"
+      },
+      "benches": {
+        "$path": "benches"
+      },
+      "mirror": {
+        "$path": "mirror"
       }
     }
   }
-  
+}
