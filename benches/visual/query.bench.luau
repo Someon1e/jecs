@@ -173,6 +173,7 @@ return {
 		Matter = function()
 			for entityId, firstComponent in newWorld:query(A1, A2, A3, A4) do
 			end
+<<<<<<< Updated upstream
 		end,
 
 		ECR = function()
@@ -182,7 +183,13 @@ return {
 
 		Jecs = function()
  			for entityId, firstComponent in ecs:query(D1, D2, D3, D4) do
+=======
+		end,
+
+		Jecs = function()
+ 			for entityId, firstComponent in ecs:query(D1):with(D2, D3, D4) do
+>>>>>>> Stashed changes
  			end
 		end,
-	},
+	}  ,
 }

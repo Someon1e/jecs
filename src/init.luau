@@ -452,50 +452,81 @@ local function archetype_traverse_add(world: World, id: i53, from: Archetype): A
 	return add
 end
 
+
+local CMD_KIND_ADD = 2^0
+local CMD_KIND_SET = bit32.bor(2^1, CMD_KIND_ADD)
+local CMD_KIND_REMOVE = 2^2
+local CMD_KIND_CLEAR = 2^3
+
 local function world_add(world: World, entity: i53, id: i53)
 	local entityIndex = world.entityIndex
 	local record = entityIndex.sparse[entity]
-	local from = record.archetype
-	local to = archetype_traverse_add(world, id, from)
-	if from == to then
-		return
-	end
-	if from then
-		entity_move(entityIndex, entity, record, to)
+
+	local i = world.stages
+	if i > 0 then
+	    world.commands[i] = {
+		    kind = CMD_KIND_ADD,
+			entity = entity,
+			id = id
+		}
+		i += 1
+		world.stages = i
 	else
-		if #to.types > 0 then
-			new_entity(entity, record, to)
+    	local from = record.archetype
+    	local to = archetype_traverse_add(world, id, from)
+    	if from == to then
+    		return
+    	end
+	    if from then
+			entity_move(entityIndex, entity, record, to)
+		else
+			if #to.types > 0 then
+				new_entity(entity, record, to)
+			end
 		end
 	end
 end
 
 -- Symmetric like `World.add` but idempotent
 local function world_set(world: World, entity: i53, id: i53, data: unknown)
-	local record = world.entityIndex.sparse[entity]
-	local from = record.archetype
-	local to = archetype_traverse_add(world, id, from)
+    local entityIndex = world.entityIndex
+    local record = entityIndex.sparse[entity]
 
-	if from == to then
-		-- If the archetypes are the same it can avoid moving the entity
-		-- and just set the data directly.
-		local tr = to.records[id]
-		from.columns[tr.column][record.row] = data
-		-- Should fire an OnSet event here.
-		return
-	end
+    local i = world.stages
+    if i > 0 then
+        world.commands[i] = {
+		    kind = CMD_KIND_SET,
+			entity = entity,
+			id = id,
+			value = data
+		}
+        i += 1
+        world.stages = i
+    else
+        local from = record.archetype
+        local to = archetype_traverse_add(world, id, from)
+        if from == to then
+            -- If the archetypes are the same it can avoid moving the entity
+            -- and just set the data directly.
+            local tr = to.records[id]
+            from.columns[tr.column][record.row] = data
+            -- Should fire an OnSet event here.
+            return
+        end
 
-	if from then
-		-- If there was a previous archetype, then the entity needs to move the archetype
-		entity_move(world.entityIndex, entity, record, to)
-	else
-		if #to.types > 0 then
-			-- When there is no previous archetype it should create the archetype
-			new_entity(entity, record, to)
-		end
-	end
+        if from then
+            -- If there was a previous archetype, then the entity needs to move the archetype
+            entity_move(world.entityIndex, entity, record, to)
+        else
+            if #to.types > 0 then
+                -- When there is no previous archetype it should create the archetype
+                new_entity(entity, record, to)
+            end
+        end
 
-	local tr = to.records[id]
-	to.columns[tr.column][record.row] = data
+        local tr = to.records[id]
+        to.columns[tr.column][record.row] = data
+    end
 end
 
 local function world_component(world: World): i53
@@ -531,17 +562,30 @@ local function archetype_traverse_remove(world: World, id: i53, from: Archetype)
 end
 
 local function world_remove(world: World, entity: i53, id: i53)
-	local entity_index = world.entityIndex
-	local record = entity_index.sparse[entity]
-	local from = record.archetype
-	if not from then
-	   return
-	end
-	local to = archetype_traverse_remove(world, id, from)
+    local entity_index = world.entityIndex
+    local record = entity_index.sparse[entity]
 
-	if from and not (from == to) then
-		entity_move(entity_index, entity, record, to)
-	end
+    local i = world.stages
+    if i > 0 then
+        world.commands[i] = {
+            kind = CMD_KIND_REMOVE,
+            entity = entity,
+            id = id,
+        }
+
+		i += 1
+		world.stages = i
+	else
+        local from = record.archetype
+		if not from then
+		   return
+		end
+		local to = archetype_traverse_remove(world, id, from)
+
+		if from and not (from == to) then
+			entity_move(entity_index, entity, record, to)
+		end
+    end
 end
 
 -- should reuse this logic in World.set instead of swap removing in transition archetype
@@ -614,18 +658,27 @@ end
 local function world_clear(world: World, entity: i53)
 	--TODO: use sparse_get (stashed)
 	local record = world.entityIndex.sparse[entity]
-	if not record then
-		return
+
+	local i = world.stages
+	if i > 0 then
+	    world.commands[i] = {
+			kind = CMD_KIND_CLEAR,
+			entity = entity,
+		}
+	else
+	    if not record then
+			return
+		end
+
+		local ROOT_ARCHETYPE = world.ROOT_ARCHETYPE
+		local archetype = record.archetype
+
+		if archetype == nil or archetype == ROOT_ARCHETYPE then
+			return
+		end
+
+		entity_move(world.entityIndex, entity, record, ROOT_ARCHETYPE)
 	end
-
-	local ROOT_ARCHETYPE = world.ROOT_ARCHETYPE
-	local archetype = record.archetype
-
-	if archetype == nil or archetype == ROOT_ARCHETYPE then
-		return
-	end
-
-	entity_move(world.entityIndex, entity, record, ROOT_ARCHETYPE)
 end
 
 local world_get: (world: World, entityId: i53, a: i53, b: i53?, c: i53?, d: i53?, e: i53?) -> (...any)
@@ -696,6 +749,83 @@ local function world_has(world: World, entity: number, ...: i53): boolean
     end
 
     return true
+end
+
+local function world_merge(world: World)
+    local entityIndex = world.entityIndex
+    local sparse = entityIndex.sparse
+    local staged = world.staged
+    for _, cmd in world.commands do
+        local id = cmd.id
+        local entity = cmd.entity
+        local kind = cmd.kind
+        local record = sparse[entity]
+        local from = record.archetype
+        if (bit32.band(kind, CMD_KIND_ADD)) ~= 0 then
+            local to = archetype_traverse_add(
+                world, id, from)
+            local batch = staged[entity]
+            if not batch then
+                batch = { values = {} }
+                staged[entity] = batch
+            end
+
+            batch.to = to
+
+            if kind == CMD_KIND_SET then
+                batch.values[id] = cmd.value
+            end
+        elseif kind == CMD_KIND_REMOVE then
+            if not from then
+                continue
+            end
+            local batch = staged[entity]
+            if not batch then
+                batch = { values = {} }
+                staged[entity] = batch
+            end
+            local to = archetype_traverse_remove(
+                world, id, from)
+
+            batch.to = to
+            local values = batch.values
+            values[id] = nil
+        elseif kind == CMD_KIND_CLEAR then
+            if from then
+                entity_move(entityIndex, entity,
+                    record, world.ROOT_ARCHETYPE)
+            end
+        end
+    end
+    for entity, batch in staged do
+        local record = sparse[entity]
+        local to = batch.to
+        local from = record.archetype
+        if from and (not from == to) then
+            entity_move(entityIndex, entity, record, to)
+        else
+            if #to.types > 0 then
+                new_entity(entity, record, to)
+            end
+        end
+
+        local row = record.row
+        local columns = to.columns
+        local records = to.records
+        for id, value in batch.values do
+            local tr = records[id]
+            if not tr then
+                continue
+            end
+            columns[tr.column][row] = value
+        end
+    end
+    table.clear(world.commands)
+    world.stages = 0
+end
+
+local function world_defer(world)
+    world.stages += 1
 end
 
 type Item = () -> (number, ...any)
@@ -1370,6 +1500,8 @@ World.get = world_get
 World.has = world_has
 World.target = world_target
 World.parent = world_parent
+World.defer = world_defer
+World.merge = world_merge
 
 function World.new()
     local self = setmetatable({
@@ -1387,6 +1519,13 @@ function World.new()
   		nextComponentId = 0,
   		nextEntityId = 0,
   		ROOT_ARCHETYPE = (nil :: any) :: Archetype,
+        queue = {
+            data = {},
+            array = {}
+        },
+        commands = {},
+        staged = {},
+        stages = 0,
     }, World)
 
 	self.ROOT_ARCHETYPE = archetype_create(self, {})

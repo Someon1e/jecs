@@ -535,50 +535,49 @@ TEST("world:query()", function()
 		CHECK(count == 2)
 	end
 
-	do CASE "iterator invalidation"
-		do CASE "adding"
-			SKIP()
-            local world = jecs.World.new()
-			local A = world:component()
-			local B = world:component()
+	do CASE "adding during iteration"
+        local world = jecs.World.new()
+		local A = world:component()
+		local B = world:component()
 
-			local e1 = world:entity()
-			local e2 = world:entity()
-			world:add(e1, A)
-			world:add(e2, A)
-			world:add(e2, B)
+		local e1 = world:entity()
+		local e2 = world:entity()
+		world:add(e1, A)
+		world:add(e2, A)
+		world:add(e2, B)
 
-			local count = 0
-			for id in world:query(A) do
-				world:add(id, B)
+		local count = 0
+		world:defer()
+		for id in world:query(A) do
+			world:add(id, B)
 
-				count += 1
-			end
+			count += 1
+		end
+		world:merge()
 
-			CHECK(count == 2)
+		CHECK(count == 2)
+	end
+
+	do CASE "spawning during iteration"
+	    local world = jecs.World.new()
+		local A = world:component()
+		local B = world:component()
+
+		local e1 = world:entity()
+		local e2 = world:entity()
+		world:add(e1, A)
+		world:add(e2, A)
+		world:add(e2, B)
+
+		local count = 0
+		for id in world:query(A) do
+			local e = world:entity()
+			world:add(e, A)
+			world:add(e, B)
+			count += 1
 		end
 
-		do CASE "spawning"
-		    local world = jecs.World.new()
-			local A = world:component()
-			local B = world:component()
-
-			local e1 = world:entity()
-			local e2 = world:entity()
-			world:add(e1, A)
-			world:add(e2, A)
-			world:add(e2, B)
-
-			local count = 0
-			for id in world:query(A) do
-				local e = world:entity()
-				world:add(e, A)
-				world:add(e, B)
-				count += 1
-			end
-
-			CHECK(count == 3)
-		end
+		CHECK(count == 3)
 	end
 
 	do CASE "should not find any entities"
@@ -747,6 +746,76 @@ TEST("world:delete", function()
 		CHECK(world:get(id1, Poison) == 500)
 		CHECK(world:get(id1, Health) == 50)
 	end
+end)
+
+TEST("world:defer", function()
+    do CASE "add"
+        local world = jecs.World.new()
+        local A = world:component()
+        local B = world:component()
+
+        local e1 = world:entity()
+        world:add(e1, A)
+        CHECK(world:has(e1, A))
+
+        world:defer()
+        world:add(e1, B)
+        CHECK(not world:has(e1, B))
+        world:merge()
+        CHECK(world:has(e1, B))
+    end
+
+    do CASE "set"
+        local world = jecs.World.new()
+        local C = world:component()
+        local e1 = world:entity()
+        world:set(e1, C, 0)
+        CHECK(world:get(e1, C) == 0)
+        world:defer()
+        world:set(e1, C, 1)
+        CHECK(world:get(e1, C) == 0)
+        world:merge()
+        CHECK(world:get(e1, C) == 1)
+    end
+
+    do CASE "remove"
+        local world = jecs.World.new()
+        local C = world:component()
+        local e1 = world:entity()
+
+        world:add(e1, C)
+        world:defer()
+        world:remove(e1, C)
+        CHECK(world:has(e1, C))
+        world:merge()
+        CHECK(not world:has(e1, C))
+    end
+
+    do CASE "clear"
+        local world = jecs.World.new()
+        local A = world:component()
+        local B = world:component()
+
+        local e2 = world:entity()
+        world:defer()
+        world:add(e2, A)
+        world:add(e2, B)
+
+        world:clear(e2)
+        CHECK(not world:has(e2, A))
+        CHECK(not world:has(e2, B))
+        world:merge(l)
+
+
+        world:defer()
+        world:clear(e2)
+        world:add(e2, A)
+        world:add(e2, B)
+
+        world:merge()
+        CHECK(world:has(e2, A))
+        CHECK(world:has(e2, B))
+    end
 end)
 
 type Tracker<T> = { track: (world: World, fn: (changes: {
