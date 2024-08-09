@@ -813,7 +813,7 @@ TEST("world:defer", function()
         world:add(e2, B)
 
         world:merge()
-        CHECK(world:has(e2, A))
+        print(CHECK(world:has(e2, A)))
         CHECK(world:has(e2, B))
     end
 end)

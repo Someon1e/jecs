@@ -755,6 +755,8 @@ local function world_merge(world: World)
     local entityIndex = world.entityIndex
     local sparse = entityIndex.sparse
     local staged = world.staged
+    local root = world.ROOT_ARCHETYPE
+
     for _, cmd in world.commands do
         local id = cmd.id
         local entity = cmd.entity
@@ -762,15 +764,17 @@ local function world_merge(world: World)
         local record = sparse[entity]
         local from = record.archetype
         if (bit32.band(kind, CMD_KIND_ADD)) ~= 0 then
-            local to = archetype_traverse_add(
-                world, id, from)
             local batch = staged[entity]
             if not batch then
-                batch = { values = {} }
+                batch = { values = {}, to = {} }
                 staged[entity] = batch
             end
 
-            batch.to = to
+            local to = batch.to
+            local at = find_insert(to, id)
+            if at ~= -1 then
+                table.insert(to, at, id)
+            end
 
             if kind == CMD_KIND_SET then
                 batch.values[id] = cmd.value
@@ -781,26 +785,36 @@ local function world_merge(world: World)
             end
             local batch = staged[entity]
             if not batch then
-                batch = { values = {} }
+                batch = { values = {}, to = {} }
                 staged[entity] = batch
             end
-            local to = archetype_traverse_remove(
-                world, id, from)
+            local at = table.find(to, id)
+            table.remove(to, at)
 
-            batch.to = to
             local values = batch.values
             values[id] = nil
         elseif kind == CMD_KIND_CLEAR then
-            if from then
-                entity_move(entityIndex, entity,
-                    record, world.ROOT_ARCHETYPE)
+            local batch = staged[entity]
+            if not batch then
+                batch = { values = {}, to = {} }
+                staged[entity] = batch
             end
+            batch.to = {}
         end
     end
     for entity, batch in staged do
         local record = sparse[entity]
-        local to = batch.to
         local from = record.archetype
+        local to = batch.to
+        if from then
+            for _, id in from.types do
+                to[#to + 1] = id
+            end
+            table.sort(to)
+        end
+
+        to = archetype_ensure(world, to, from)
+
         if from and (not from == to) then
             entity_move(entityIndex, entity, record, to)
         else

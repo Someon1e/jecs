@@ -27,7 +27,7 @@ do TITLE "deferring"
         for i = 1, START(N) do
             world:defer()
 
-            for i = 1, 100 do
+            for i = 1, 10 do
                 local e = world:entity()
                 world:set(e, A, 1)
                 world:set(e, B, 1)
@@ -54,7 +54,7 @@ do TITLE "immediate"
 
     BENCH("", function()
         for i = 1, START(N) do
-            for i = 1, 100 do
+            for i = 1, 10 do
                 local e = world:entity()
                 world:set(e, A, 1)
                 world:set(e, B, 1)
